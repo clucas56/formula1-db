@@ -21,19 +21,20 @@ BASE_URL = "https://api.jolpi.ca/ergast/f1"
 
 # Rate limiting — 200 requests per hour max
 # 0.5 seconds between requests = safe buffer
-RATE_LIMIT_DELAY = 0.5
+RATE_LIMIT_DELAY = 0.5 #Standard Delay
+RESULTS_RATE_LIMIT_DELAY = 20   # longer delay for bulk season loads
 
 #============================
 # 2. API Fetch Function
 #============================
 
 def fetch(endpoint, params=None):
-
+    
     #Make a GET request to the Jolpica API.
     #Handles errors and rate limiting automatically.
 
     url = f"{BASE_URL}/{endpoint}"
-
+    
     try:
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # raises error if status code is 4xx or 5xx
@@ -48,11 +49,11 @@ def fetch(endpoint, params=None):
     except requests.exceptions.ConnectionError:
         logger.error(f"Connection error fetching {url}")
         return None
-
+ 
 #============================
 # 3. Fetch All Pages Function
-#============================
-
+#============================   
+ 
 def fetch_all(endpoint):
     #Jolpica API returns max 100 records per call.
     #This function keeps fetching until it has ALL records.
@@ -106,7 +107,7 @@ def load_circuits(conn):
 
     conn.commit()
     logger.info(f"Loaded {count} circuits")
-
+    
 #============================
 # 5. Load Drivers
 #============================
@@ -125,9 +126,9 @@ def load_drivers(conn):
             upsert(conn, "drivers", {
                 "driver_id":        d["driverId"],
                 "code":             d.get("code"),
-                "first_name":       d["givenName"],
-                "last_name":        d["familyName"],
-                "nationality":      d["nationality"],
+                "first_name":       d.get("givenName"),
+                "last_name":        d.get("familyName"),
+                "nationality":      d.get("nationality"),
                 "date_of_birth":    d.get("dateOfBirth"),
                 "permanent_number": d.get("permanentNumber")
             }, "driver_id")
@@ -135,7 +136,7 @@ def load_drivers(conn):
 
     conn.commit()
     logger.info(f"Loaded {count} drivers")
-
+    
 #============================
 # 6. Load Constructors
 #============================
@@ -208,13 +209,13 @@ def load_seasons(conn):
         conn.commit()
 
     logger.info(f"Loaded {season_count} seasons and {race_count} races")
-
+    time.sleep(RESULTS_RATE_LIMIT_DELAY) #Delay prior to moving to race results
 #============================
 # 8. Load Race Results
 #============================
 
 def load_race_results(conn):
-    """Fetch all race results for every season."""
+    #Fetch all race results for every season.
     logger.info("Loading race results...")
     count = 0
 
@@ -227,7 +228,6 @@ def load_race_results(conn):
             races = page["MRData"]["RaceTable"]["Races"]
 
             for race in races:
-                # Get race_id from database
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT race_id FROM races WHERE season_year = %s AND round = %s",
@@ -243,19 +243,24 @@ def load_race_results(conn):
 
                 for r in race["Results"]:
                     upsert(conn, "race_results", {
-                        "race_id":          race_id,
-                        "driver_id":        r["Driver"]["driverId"],
-                        "constructor_id":   r["Constructor"]["constructorId"],
-                        "grid_position":    r.get("grid"),
-                        "finish_position":  r.get("position"),
-                        "points":           r.get("points"),
-                        "laps_completed":   r.get("laps"),
-                        "status":           r["status"],
-                        "fastest_lap":      r.get("FastestLap", {}).get("rank") == "1"
+                        "race_id":         race_id,
+                        "driver_id":       r["Driver"]["driverId"],
+                        "constructor_id":  r["Constructor"]["constructorId"],
+                        "grid_position":   r.get("grid"),
+                        "finish_position": r.get("position"),
+                        "points":          r.get("points"),
+                        "laps_completed":  r.get("laps"),
+                        "status":          r["status"],
+                        "fastest_lap":     r.get("FastestLap", {}).get("rank") == "1"
                     }, "result_id")
                     count += 1
 
         conn.commit()
+        logger.info(f"Season {year} complete - {count} total results so far")
+
+        # Pause between seasons to avoid rate limiting
+        logger.info(f"Waiting {RESULTS_RATE_LIMIT_DELAY} seconds before next season...")
+        time.sleep(RESULTS_RATE_LIMIT_DELAY)
 
     logger.info(f"Loaded {count} race results")
 
