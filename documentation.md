@@ -434,6 +434,101 @@ python3 pipeline/setup_db.py
 
 ---
 
+## Data Quality — Duplicate Prevention
+
+### Problem
+On initial load, duplicate records were inserted into several tables because the
+upsert function was checking conflict on SERIAL (auto-increment) primary keys
+which are always unique by definition. This caused every insert to succeed
+even when the same logical record already existed.
+
+### Affected Tables
+- race_results
+- qualifying_results
+- sprint_results
+- races
+- driver_standings
+- constructor_standings
+
+### Root Cause
+```python
+# Wrong - SERIAL id is always unique, never conflicts
+upsert(conn, "race_results", {...}, "result_id")
+
+# Correct - checks the real unique combination
+upsert(conn, "race_results", {...}, "race_id, driver_id")
+```
+
+### Fix Applied
+
+#### Step 1 - Cleaned existing duplicates
+```sql
+-- Child tables first, then parent tables (foreign key order)
+DELETE FROM race_results a
+USING race_results b
+WHERE a.result_id < b.result_id
+AND a.race_id = b.race_id
+AND a.driver_id = b.driver_id;
+```
+
+#### Step 2 - Added unique constraints
+```sql
+ALTER TABLE race_results
+ADD CONSTRAINT uq_race_results
+UNIQUE (race_id, driver_id);
+```
+
+#### Step 3 - Updated upsert conflict columns in fetch_data.py
+#### Step 4 - Updated schema.sql to reflect constraints
+
+### Unique Constraints Added
+| Table | Unique Constraint |
+|---|---|
+| races | season_year, round |
+| race_results | race_id, driver_id |
+| qualifying_results | race_id, driver_id |
+| sprint_results | race_id, driver_id |
+| driver_standings | season_year, round, driver_id |
+| constructor_standings | season_year, round, constructor_id |
+
+### Key Lessons
+- Always use meaningful business columns as conflict columns in upsert
+- Never use SERIAL/auto-increment IDs as upsert conflict targets
+- Clean child tables before parent tables when dealing with foreign keys
+- Use BEGIN/COMMIT transactions when making bulk changes
+- Always verify fixes with a duplicate check query after cleanup
+
+### Duplicate Check Query
+Run this anytime to verify data quality:
+```sql
+SELECT 'race_results' as table_name, COUNT(*) as dupes
+FROM race_results a
+INNER JOIN race_results b ON a.race_id = b.race_id
+AND a.driver_id = b.driver_id
+AND a.result_id < b.result_id
+UNION ALL
+SELECT 'qualifying_results', COUNT(*)
+FROM qualifying_results a
+INNER JOIN qualifying_results b ON a.race_id = b.race_id
+AND a.driver_id = b.driver_id
+AND a.qualifying_id < b.qualifying_id
+UNION ALL
+SELECT 'sprint_results', COUNT(*)
+FROM sprint_results a
+INNER JOIN sprint_results b ON a.race_id = b.race_id
+AND a.driver_id = b.driver_id
+AND a.sprint_id < b.sprint_id
+UNION ALL
+SELECT 'races', COUNT(*)
+FROM races a
+INNER JOIN races b ON a.season_year = b.season_year
+AND a.round = b.round
+AND a.race_id < b.race_id;
+```
+
+
+---
+
 ## GitHub Version Control
 
 ### Repository
