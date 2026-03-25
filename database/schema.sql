@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS races (
     race_name VARCHAR(100),
     circuit_id VARCHAR(50) REFERENCES circuits(circuit_id),
     date DATE,
-    time TIME
+    time TIME,
+    UNIQUE (season_year, round)
 );
 
 -- Race Results
@@ -54,7 +55,8 @@ CREATE TABLE IF NOT EXISTS race_results (
     points DECIMAL(4,1),
     laps_completed INT,
     status VARCHAR(50),
-    fastest_lap BOOLEAN DEFAULT FALSE
+    fastest_lap BOOLEAN DEFAULT FALSE.
+    UNIQUE (race_id, driver_id)
 );
 
 -- Qualifying Results
@@ -66,7 +68,8 @@ CREATE TABLE IF NOT EXISTS qualifying_results (
     position INT,
     q1_time VARCHAR(20),
     q2_time VARCHAR(20),
-    q3_time VARCHAR(20)
+    q3_time VARCHAR(20),
+    UNIQUE (race_id, driver_id)
 );
 
 -- Sprint Results
@@ -78,7 +81,8 @@ CREATE TABLE IF NOT EXISTS sprint_results (
     grid_position INT,
     finish_position INT,
     points DECIMAL(4,1),
-    status VARCHAR(50)
+    status VARCHAR(50),
+    UNIQUE (race_id, driver_id)
 );
 
 -- Driver Standings

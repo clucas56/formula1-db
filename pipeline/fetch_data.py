@@ -80,7 +80,7 @@ def fetch_all(endpoint):
 
     return all_results
 
-"""
+
 #============================
 # 4. Load Circuits
 #============================
@@ -204,7 +204,7 @@ def load_seasons(conn):
                 "circuit_id":  r["Circuit"]["circuitId"],
                 "date":        r.get("date"),
                 "time":        r.get("time")
-            }, "race_id")
+            }, "season_year, round")
             race_count += 1
 
         conn.commit()
@@ -253,7 +253,7 @@ def load_race_results(conn):
                         "laps_completed":  r.get("laps"),
                         "status":          r["status"],
                         "fastest_lap":     r.get("FastestLap", {}).get("rank") == "1"
-                    }, "result_id")
+                    }, "race_id, driver_id")
                     count += 1
 
         conn.commit()
@@ -264,7 +264,7 @@ def load_race_results(conn):
         time.sleep(RESULTS_RATE_LIMIT_DELAY)
 
     logger.info(f"Loaded {count} race results")
-"""
+
 
 #============================
 # 10. Load Qualifying Results
@@ -305,7 +305,7 @@ def load_qualifying(conn):
                         "q1_time":        q.get("Q1"),
                         "q2_time":        q.get("Q2"),
                         "q3_time":        q.get("Q3")
-                    }, "qualifying_id")
+                    }, "race_id, driver_id")
                     count += 1
 
         conn.commit()
@@ -354,7 +354,7 @@ def load_sprint(conn):
                         "finish_position": s.get("position"),
                         "points":          s.get("points"),
                         "status":          s.get("status")
-                    }, "sprint_id")
+                    }, "race_id, driver_id")
                     count += 1
 
         conn.commit()
