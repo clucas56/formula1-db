@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS driver_standings (
     driver_id VARCHAR(50) REFERENCES drivers(driver_id),
     points DECIMAL(6,1),
     position INT,
-    wins INT
+    wins INT,
+    UNIQUE (season_year, round, driver_id)
 );
 
 -- Constructor Standings
@@ -100,7 +101,8 @@ CREATE TABLE IF NOT EXISTS constructor_standings (
     constructor_id VARCHAR(50) REFERENCES constructors(constructor_id),
     points DECIMAL(6,1),
     position INT,
-    wins INT
+    wins INT,
+    UNIQUE (season_year, round, constructor_id)
 );
 
 -- Lap Times

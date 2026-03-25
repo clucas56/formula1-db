@@ -390,7 +390,7 @@ def load_driver_standings(conn):
                         "points":      s.get("points"),
                         "position":    s.get("position"),
                         "wins":        s.get("wins")
-                    }, "standing_id")
+                    }, "season_year, round, driver_id")
                     count += 1
 
         conn.commit()
@@ -427,7 +427,7 @@ def load_constructor_standings(conn):
                         "points":         s.get("points"),
                         "position":       s.get("position"),
                         "wins":           s.get("wins")
-                    }, "standing_id")
+                    }, "season_year, round, constructor_id")
                     count += 1
 
         conn.commit()
