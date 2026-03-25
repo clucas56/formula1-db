@@ -651,14 +651,73 @@ python3 pipeline/setup_db.py
 
 ---
 
-## Next Steps
+## Incremental Load Pipeline
 
-- [ ] Write `fetch_data.py` to pull F1 data from Jolpica API
-- [ ] Load historical race data into PostgreSQL
-- [ ] Set up cron job for scheduled data updates
-- [ ] Build web dashboard (index.html + Flask backend)
-- [ ] Implement AI text-to-SQL query layer using Claude API
-- [ ] Set up GitHub webhook for auto-deploy to Ubuntu web server
-- [ ] Make tunnel persistent with autossh
-- [ ] Migrate to Azure (PostgreSQL → Azure DB, Pipeline → ADF, AI → Azure OpenAI)
-- [ ] Make GitHub repo public as portfolio piece
+### Overview
+After the full historical load, new race data is loaded incrementally after
+each race weekend using incremental_load.py. This is much faster than the
+full load — runs in under 10 seconds vs hours.
+
+### File
+```
+pipeline/incremental_load.py
+```
+
+### How it Works
+```
+1. Fetch latest completed race from Jolpica API
+2. Check if race already exists in database
+3. If new — insert race details
+4. Load race results, qualifying, sprint, standings
+5. Upsert everything — safe to run multiple times
+```
+
+### Idempotency
+The script is idempotent — running it multiple times produces the same
+result without creating duplicate data. Safe to run anytime.
+
+### Cron Schedule
+Runs automatically every Monday at 6am on the Ubuntu web server:
+```bash
+0 6 * * 1 cd /home/clucas/formula1-db && python3 pipeline/incremental_load.py
+```
+
+Monday was chosen because most F1 races happen on Sunday — data is
+available in the API within hours of the race finishing.
+
+### Manual Run
+```bash
+cd ~/formula1-db
+python3 pipeline/incremental_load.py
+```
+
+### Log Location
+```
+~/formula1-db/logs/incremental/
+```
+
+### Key Differences from fetch_data.py
+| | fetch_data.py | incremental_load.py |
+|---|---|---|
+| Purpose | One time bootstrap | Run after each race |
+| Data range | 1950 to present | Latest race only |
+| Runtime | 1-2 hours | Under 10 seconds |
+| Rate limiting | 20 second delays | Standard 0.5s delay |
+| Driver/constructor upsert | Separate functions | Inline with results |
+
+---
+
+## Cron Jobs (Ubuntu Web Server)
+```bash
+# View current cron jobs
+crontab -l
+
+# Edit cron jobs
+crontab -e
+```
+
+### Current Schedule
+| Schedule | Command | Purpose |
+|---|---|---|
+| Every Monday 6am | python3 pipeline/incremental_load.py | Load latest race data |
+| On reboot | autossh tunnel | Restart SSH tunnel to Debian VM |
