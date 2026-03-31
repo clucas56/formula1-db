@@ -1,7 +1,7 @@
 # F1 Data Platform — Project Documentation
 
-**Author:** clucas56  
-**Last Updated:** March 2026  
+**Author:** clucas56
+**Last Updated:** March 2026
 **Repository:** github.com/clucas56/formula1-db
 
 ---
@@ -14,20 +14,22 @@
 4. [Debian DB Server Setup](#debian-db-server-setup)
 5. [PostgreSQL Setup](#postgresql-setup)
 6. [Ubuntu Web Server](#ubuntu-web-server)
-7. [SSH Tunnel Setup](#ssh-tunnel-setup)
-8. [Python Pipeline](#python-pipeline)
-9. [Database Schema](#database-schema)
-10. [Data Quality — Duplicate Prevention](#data-quality--duplicate-prevention)
-11. [GitHub Version Control](#github-version-control)
-12. [Firewall Rules](#firewall-rules)
-13. [Network Topology](#network-topology)
-14. [Incremental Load Pipeline](#incremental-load-pipeline)
-15. [Cron Jobs](#cron-jobs)
-16. [How It All Connects — End to End Flow](#how-it-all-connects--end-to-end-flow)
-17. [Key Concepts Learned](#key-concepts-learned)
-18. [Troubleshooting](#troubleshooting)
-19. [Next Steps](#next-steps)
-20. [Azure Equivalent Architecture](#azure-equivalent-architecture)
+7. [Flask App Server Setup](#flask-app-server-setup)
+8. [SSH Tunnel Setup](#ssh-tunnel-setup)
+9. [Python Pipeline](#python-pipeline)
+10. [Database Schema](#database-schema)
+11. [Database Views](#database-views)
+12. [Data Quality — Duplicate Prevention](#data-quality--duplicate-prevention)
+13. [GitHub Version Control](#github-version-control)
+14. [Firewall Rules](#firewall-rules)
+15. [Network Topology](#network-topology)
+16. [Incremental Load Pipeline](#incremental-load-pipeline)
+17. [Cron Jobs](#cron-jobs)
+18. [How It All Connects — End to End Flow](#how-it-all-connects--end-to-end-flow)
+19. [Key Concepts Learned](#key-concepts-learned)
+20. [Troubleshooting](#troubleshooting)
+21. [Next Steps](#next-steps)
+22. [Azure Equivalent Architecture](#azure-equivalent-architecture)
 
 ---
 
@@ -35,17 +37,21 @@
 
 This project is a full end to end F1 data platform built entirely on home lab
 infrastructure. It pulls historical and live Formula 1 data from public APIs,
-stores it in a relational database, and will eventually serve it through a web
-dashboard with an AI query layer.
+stores it in a relational database, and serves it through a live web dashboard
+at f1.charleslucas562.com with an AI query layer planned next.
 
 ```
 Public F1 APIs (Jolpica + OpenF1)
         ↓ Python pipeline fetches data
 PostgreSQL Database (debian-db VM)
         ↓ stores 25,000+ race results from 1950-2026
-Ubuntu Web Server (webster VM)
-        ↓ will serve dashboard and AI query layer
-Your Browser (pgAdmin, future web dashboard)
+Flask Web App (debian-app VM)
+        ↓ queries database and serves HTML
+Apache Reverse Proxy (webster VM)
+        ↓ routes traffic to Flask
+Cloudflare Tunnel
+        ↓ exposes to public internet
+f1.charleslucas562.com (live dashboard)
 ```
 
 This maps directly to real enterprise data engineering:
@@ -60,6 +66,10 @@ This maps directly to real enterprise data engineering:
 | .env file | Azure Key Vault |
 | GitHub | Azure DevOps |
 | Python psycopg2 | Synapse Linked Service |
+| Flask + gunicorn | Azure App Service (Python) |
+| Apache reverse proxy | Azure Application Gateway / Front Door |
+| Cloudflare Tunnel | Azure Public IP + DNS |
+| Database views | Azure SQL Views / Synapse Views |
 
 ---
 
@@ -70,23 +80,25 @@ Windows Machine (pgAdmin, VSCode)
         ↓ SSH tunnel through RHEL host
 RHEL IBM-BASEMENT (192.168.4.5) — Bare Metal Host
         ↓ KVM Hypervisor
-        ├── Ubuntu VM — webster (192.168.4.7) — Web Server
-        └── Debian VM — debian-db (192.168.122.236) — Database Server
-                              ↓
-                        PostgreSQL 17
-                              ↓
-                          f1_data DB
+        ├── Ubuntu VM — webster (192.168.4.7) — Web Server + Reverse Proxy
+        ├── Debian VM — debian-db (192.168.122.236) — Database Server
+        │                     └── PostgreSQL 17
+        │                           └── f1_data DB
+        └── Debian VM — debian-app (192.168.122.100) — Flask App Server
+                              └── gunicorn + Flask
+                                    └── f1.charleslucas562.com
 ```
 
-### Why Two VMs?
+### Why Three VMs?
 
-Separating the web server and database server is a fundamental architecture
-pattern in enterprise systems. Benefits include:
+Separating the web server, app server, and database server is a fundamental
+architecture pattern in enterprise systems. Benefits include:
 
 - **Security** — database is not directly exposed to the internet
-- **Performance** — each server can be tuned for its specific workload
-- **Scalability** — you can scale them independently
-- **Stability** — a web server crash does not affect the database
+- **Separation of concerns** — each VM has one job
+- **Blast radius** — if Flask crashes it does not affect the database or portfolio site
+- **Scalability** — each layer can be scaled or replaced independently
+- **Portfolio** — mirrors real production architecture patterns
 
 ---
 
@@ -135,6 +147,9 @@ virsh undefine <vm-name>
 
 # Delete VM disk
 rm /var/lib/libvirt/images/<vm-name>.qcow2
+
+# Check available osinfo variants for virt-install
+osinfo-query os | grep debian
 ```
 
 ### KVM Network Explained
@@ -145,17 +160,18 @@ KVM creates two types of virtual networks:
 - VMs on virbr0 get IPs in the 192.168.122.x range
 - VMs can talk to each other freely
 - Reaches internet via NAT through the physical NIC
-- debian-db uses this network
+- debian-db and debian-app use this network
 
 **macvtap on eno2**
 - Plugs directly into the physical network card
 - VM gets a real IP from your home router (192.168.4.x)
 - Can talk to any device on your home network
 - Cannot talk directly to other macvtap VMs on the same host (Linux limitation)
-- ubuntu/webster uses this network
+- webster uses this network
 
-> This is why we need an SSH tunnel — the two VMs are on different network
-> types and cannot communicate directly.
+> This is why we need SSH tunnels — the two network types cannot
+> communicate directly. webster must tunnel through IBM-BASEMENT
+> to reach anything on virbr0.
 
 ---
 
@@ -164,7 +180,7 @@ KVM creates two types of virtual networks:
 ### Specs
 | Property | Value |
 |---|---|
-| OS | Debian 13.3 Trixie |
+| OS | Debian 13.4 Trixie |
 | Hostname | debian-db |
 | IP | 192.168.122.236 (static) |
 | RAM | 4 GB |
@@ -184,7 +200,7 @@ KVM creates two types of virtual networks:
 #### 1. Download ISO on RHEL Host
 ```bash
 cd /var/lib/libvirt/images
-wget https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.3.0-amd64-netinst.iso
+wget https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.4.0-amd64-netinst.iso
 ```
 
 #### 2. Create VM
@@ -198,9 +214,12 @@ virt-install \
   --network network=default \
   --graphics none \
   --console pty,target_type=serial \
-  --location /var/lib/libvirt/images/debian-13.3.0-amd64-netinst.iso \
+  --location /var/lib/libvirt/images/debian-13.4.0-amd64-netinst.iso \
   --extra-args 'console=ttyS0,115200n8'
 ```
+
+> **Note:** Use `--os-variant debiantesting` — Debian 13 is not yet in the
+> osinfo dictionary on RHEL 7. This is the correct fallback variant.
 
 #### 3. Installer Choices
 - **Partitioning:** Separate /var and /srv
@@ -399,7 +418,7 @@ psql -h 127.0.0.1 -U f1user -d f1_data
 | OS | Ubuntu 20.04 |
 | Hostname | webster |
 | IP | 192.168.4.7 (macvtap on eno2) |
-| Purpose | Web Server, Python Pipeline |
+| Purpose | Reverse Proxy, Python Pipeline, Cloudflare Tunnel |
 | Web Server | Apache |
 
 ### Python Environment
@@ -426,8 +445,6 @@ sudo apt install -y postgresql-client
 ├── logs/
 │   ├── fetch/                   <- logs from fetch_data.py
 │   └── incremental/             <- logs from incremental_load.py
-├── web/
-│   └── index.html               <- dashboard frontend (planned)
 └── ai/
     └── query_engine.py          <- AI text-to-SQL layer (planned)
 ```
@@ -448,64 +465,369 @@ DB_PASSWORD=yourpassword
 > to GitHub. Credentials in a public repo is a serious security issue.
 > Always use environment variables or a secrets manager for credentials.
 
+### Apache Reverse Proxy Configuration
+
+Apache on webster acts as a reverse proxy — it receives incoming web traffic
+and forwards it to the appropriate backend service. This keeps one consistent
+entry point for all web traffic.
+
+#### Enable Required Modules
+```bash
+sudo a2enmod proxy proxy_http
+sudo systemctl restart apache2
+```
+
+#### Virtual Host for F1 Dashboard
+```bash
+sudo nano /etc/apache2/sites-available/f1-app.conf
+```
+```apache
+<VirtualHost *:80>
+    ServerName f1.charleslucas562.com
+
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:5000/
+    ProxyPassReverse / http://localhost:5000/
+
+    ErrorLog ${APACHE_LOG_DIR}/f1-app-error.log
+    CustomLog ${APACHE_LOG_DIR}/f1-app-access.log combined
+</VirtualHost>
+```
+```bash
+sudo a2ensite f1-app.conf
+sudo systemctl reload apache2
+```
+
+> **Note:** ProxyPass points to localhost:5000 not directly to debian-app's IP.
+> This is because webster cannot reach virbr0 VMs directly — an SSH tunnel
+> bridges port 5000 from localhost to debian-app.
+
+### Cloudflare Tunnel Configuration
+
+The Cloudflare Tunnel config lives at `/etc/cloudflared/config.yml`.
+It routes incoming Cloudflare traffic to Apache on localhost.
+
+```yaml
+tunnel: personal-site
+credentials-file: /root/.cloudflared/<tunnel-id>.json
+ingress:
+  - hostname: f1.charleslucas562.com
+    service: http://localhost:80
+  - hostname: charleslucas562.com
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+> **Important:** Ingress rules are evaluated top to bottom. More specific
+> hostnames (subdomains) must come before the root domain. The final
+> catch-all `http_status:404` is required.
+
+```bash
+# Restart after any config change
+sudo systemctl restart cloudflared
+
+# Check status
+sudo systemctl status cloudflared
+```
+
+---
+
+## Flask App Server Setup
+
+### Specs
+| Property | Value |
+|---|---|
+| OS | Debian 13.4 Trixie |
+| Hostname | debian-app |
+| IP | 192.168.122.100 (static) |
+| RAM | 4 GB |
+| Disk | 20 GB |
+| Network | virbr0 (KVM internal) |
+| Purpose | Flask Web Application Server |
+| App URL | f1.charleslucas562.com |
+
+### Why a Dedicated VM?
+Running Flask on its own VM rather than on webster provides:
+- Clean separation — web server does one thing, app server does another
+- If Flask crashes, Apache and the portfolio site are unaffected
+- Mirrors real production architecture (App Service separate from Front Door)
+- Easier to snapshot, rebuild, or replace the app layer independently
+
+### VM Creation
+```bash
+# On IBM-BASEMENT
+virt-install \
+  --name debian-app \
+  --ram 4096 \
+  --vcpus 2 \
+  --disk path=/var/lib/libvirt/images/f1-app.qcow2,size=20 \
+  --os-variant debiantesting \
+  --network network=default \
+  --graphics none \
+  --console pty,target_type=serial \
+  --location /var/lib/libvirt/images/debian-13.4.0-amd64-netinst.iso \
+  --extra-args 'console=ttyS0,115200n8 serial'
+```
+
+### Static IP Setup
+```bash
+nano /etc/network/interfaces
+```
+```
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet static
+    address 192.168.122.100
+    netmask 255.255.255.0
+    gateway 192.168.122.1
+    dns-nameservers 8.8.8.8 8.8.4.4
+```
+```bash
+systemctl restart networking
+```
+
+### Python and Virtual Environment
+
+#### Install Python
+```bash
+apt install -y python3 python3-pip python3-venv
+```
+
+#### What is a Virtual Environment?
+A virtual environment is an isolated box for a project's Python packages.
+Instead of installing Flask globally (which can cause version conflicts),
+everything the app needs lives inside one folder. Standard professional practice.
+
+#### Create the Virtual Environment
+```bash
+mkdir -p /var/www/f1-app
+python3 -m venv /var/www/f1-app/venv
+```
+
+#### Activate the Virtual Environment
+```bash
+source /var/www/f1-app/venv/bin/activate
+# Prompt changes to (venv) — you are now inside the isolated environment
+```
+
+#### Install Packages
+```bash
+pip install flask gunicorn psycopg2-binary python-dotenv
+```
+
+### App Structure
+```
+/var/www/f1-app/
+├── .env                  <- database credentials (never commit)
+├── app.py                <- Flask application
+├── venv/                 <- Python virtual environment
+└── templates/
+    └── index.html        <- HTML dashboard template
+```
+
+### app.py
+```python
+import os
+import psycopg2
+from flask import Flask, render_template
+from dotenv import load_dotenv
+from pathlib import Path
+
+# ------------------------------------------------
+# Configuration
+# ------------------------------------------------
+
+load_dotenv(Path(__file__).parent / '.env')
+
+app = Flask(__name__)
+
+# ------------------------------------------------
+# Database connection
+# ------------------------------------------------
+
+def get_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD")
+    )
+
+# ------------------------------------------------
+# Routes
+# ------------------------------------------------
+
+@app.route('/')
+def index():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM current_standings;")
+    standings = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM last_race_results;")
+    last_race = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return render_template('index.html', standings=standings, last_race=last_race)
+
+# ------------------------------------------------
+# Entry point
+# ------------------------------------------------
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+```
+
+### .env on debian-app
+Same structure as webster but DB_HOST points directly to debian-db
+since both VMs are on virbr0 and can reach each other natively.
+```
+DB_HOST=192.168.122.236
+DB_PORT=5432
+DB_NAME=f1_data
+DB_USER=f1user
+DB_PASSWORD=yourpassword
+```
+
+Secure the file:
+```bash
+chown f1app:f1app /var/www/f1-app/.env
+chmod 600 /var/www/f1-app/.env
+```
+
+### Dedicated Service Account
+Running web apps as root is a security risk. A dedicated service account
+limits the blast radius if the app is ever compromised.
+
+```bash
+# Create a system account with no login shell and no home directory
+useradd --system --no-create-home --shell /usr/sbin/nologin f1app
+
+# Give it ownership of the app directory
+chown -R f1app:f1app /var/www/f1-app
+```
+
+### gunicorn
+Flask's built-in dev server handles one request at a time. gunicorn is a
+production WSGI server that runs multiple worker processes concurrently.
+
+Think of Flask's dev server as a food truck run by one person, and gunicorn
+as a restaurant kitchen with multiple cooks.
+
+Test manually:
+```bash
+source /var/www/f1-app/venv/bin/activate
+gunicorn --workers 3 --bind 0.0.0.0:5000 --chdir /var/www/f1-app app:app
+```
+
+### systemd Service
+systemd keeps gunicorn running automatically and restarts it if it crashes.
+
+```bash
+nano /etc/systemd/system/f1-app.service
+```
+```ini
+[Unit]
+Description=F1 Dashboard Flask App
+After=network.target
+
+[Service]
+User=f1app
+WorkingDirectory=/var/www/f1-app
+Environment="PATH=/var/www/f1-app/venv/bin"
+ExecStart=/var/www/f1-app/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable f1-app    # start on boot
+systemctl start f1-app     # start now
+systemctl status f1-app    # verify running
+```
+
+#### systemd Service File Explained
+- `After=network.target` — wait for network before starting
+- `User=f1app` — run as the dedicated service account, not root
+- `Environment="PATH=..."` — use the virtual environment's Python, not system Python
+- `Restart=always` — auto-restart if the process crashes
+- `WantedBy=multi-user.target` — start during normal system boot
+
+### Key systemctl Commands
+```bash
+systemctl start f1-app      # start the service
+systemctl stop f1-app       # stop the service
+systemctl restart f1-app    # restart (use after code changes)
+systemctl status f1-app     # check if running
+systemctl enable f1-app     # start on boot
+systemctl disable f1-app    # do not start on boot
+```
+
 ---
 
 ## SSH Tunnel Setup
 
-### Why Do We Need a Tunnel?
-The Ubuntu web server (192.168.4.7) and Debian database server (192.168.122.236)
-are on different networks. macvtap VMs cannot communicate directly with each
-other on the same host — it is a Linux networking limitation by design.
+### Why Do We Need Tunnels?
+The Ubuntu web server (192.168.4.7) and the virbr0 VMs (192.168.122.x) are
+on different networks. macvtap VMs cannot communicate directly with virbr0
+VMs on the same host — it is a Linux networking limitation by design.
 
-The solution is an SSH tunnel through the RHEL host which can reach both networks.
+The solution is SSH tunnels through the RHEL host which can reach both networks.
 
-### How it Works
+### Tunnel 1 — webster to debian-db (PostgreSQL)
+Used by the Python pipeline to reach the database.
+
 ```
-Ubuntu (192.168.4.7)
-    ↓ opens SSH connection to RHEL
-RHEL IBM-BASEMENT (192.168.4.5)
+webster (192.168.4.7)
+    ↓ opens SSH connection to IBM-BASEMENT
+IBM-BASEMENT (192.168.4.5)
     ↓ forwards traffic through virbr0
-Debian DB (192.168.122.236:5432)
+debian-db (192.168.122.236:5432)
 ```
 
-From Python's perspective it looks like PostgreSQL is running locally on
-Ubuntu at 127.0.0.1:5432 — the tunnel handles the routing transparently.
+From Python's perspective PostgreSQL looks like it is running locally
+on webster at 127.0.0.1:5432.
 
-### Start the Tunnel Manually
-```bash
-ssh -L 5432:192.168.122.236:5432 root@192.168.4.5 -N -f
+### Tunnel 2 — webster to debian-app (Flask)
+Used by Apache to forward web traffic to the Flask app.
+
 ```
-- `-L 5432` — listen on local port 5432
-- `192.168.122.236:5432` — forward to Debian PostgreSQL
-- `root@192.168.4.5` — through the RHEL host
-- `-N` — no command just tunnel
-- `-f` — run in background
-
-### Verify Tunnel is Running
-```bash
-ps aux | grep ssh
-ss -tlnp | grep 5432
+webster (192.168.4.7)
+    ↓ opens SSH connection to IBM-BASEMENT
+IBM-BASEMENT (192.168.4.5)
+    ↓ forwards traffic through virbr0
+debian-app (192.168.122.100:5000)
 ```
 
-### Kill the Tunnel
-```bash
-pkill -f "ssh -L 5432"
-```
+Apache proxies to localhost:5000 which the tunnel maps to debian-app.
 
-### Test the Tunnel
+### Persistent Tunnels (crontab on webster)
 ```bash
-psql -h 127.0.0.1 -p 5432 -U f1user -d f1_data
-```
-
-### Persistent Tunnel (auto-restart on reboot)
-```bash
-sudo apt install autossh
 crontab -e
-# Add: @reboot sleep 30 && autossh -M 0 -f -N -L 5432:192.168.122.236:5432 root@192.168.4.5
+```
+```
+@reboot sleep 30 && autossh -M 0 -f -N -L 5432:192.168.122.236:5432 root@192.168.4.5
+@reboot sleep 30 && autossh -M 0 -f -N -L 5000:192.168.122.100:5000 root@192.168.4.5
 ```
 
-autossh monitors the tunnel and automatically restarts it if it drops.
-The sleep 30 gives the network time to come up before connecting.
+autossh monitors tunnels and automatically restarts them if they drop.
+sleep 30 gives the network time to come up before connecting on reboot.
+
+### Verify Tunnels are Running
+```bash
+ps aux | grep autossh
+ss -tlnp | grep 5432
+ss -tlnp | grep 5000
+```
 
 ### SSH Keys (no password prompts)
 ```bash
@@ -513,8 +835,12 @@ ssh-keygen -t ed25519 -C "webster-to-rhel"
 ssh-copy-id root@192.168.4.5
 ```
 
-After this Ubuntu can SSH to RHEL without a password — required for
-autossh to work automatically on reboot.
+Required for autossh to work automatically on reboot.
+
+### Note on debian-app to debian-db
+debian-app and debian-db are both on virbr0 (192.168.122.x) so they can
+reach each other directly — no tunnel needed between them. Flask connects
+to PostgreSQL at 192.168.122.236 directly.
 
 ---
 
@@ -659,6 +985,72 @@ duplicate data and make upsert work correctly:
 
 ---
 
+## Database Views
+
+### What is a View?
+A view is a saved query that lives in PostgreSQL. Instead of writing long
+JOIN queries in Flask every time, the view is defined once in the database
+and queried with a simple SELECT. This separates concerns — the database
+handles data shaping, Python handles application logic.
+
+This maps directly to Azure Synapse views and SQL Server views used in
+enterprise BI and reporting pipelines.
+
+### current_standings
+Returns the current season driver championship standings at the latest round.
+Uses EXTRACT(YEAR FROM CURRENT_DATE) so it automatically reflects the
+current season without hardcoding a year.
+
+```sql
+CREATE OR REPLACE VIEW current_standings AS
+SELECT
+    ds.position,
+    d.first_name,
+    d.last_name,
+    ds.points,
+    ds.wins
+FROM driver_standings ds
+JOIN drivers d ON ds.driver_id = d.driver_id
+WHERE ds.season_year = EXTRACT(YEAR FROM CURRENT_DATE)
+AND ds.round = (
+    SELECT MAX(round) FROM driver_standings
+    WHERE season_year = EXTRACT(YEAR FROM CURRENT_DATE)
+)
+ORDER BY ds.position;
+```
+
+### last_race_results
+Returns the full finishing order of the most recently completed race
+in the current season.
+
+```sql
+CREATE OR REPLACE VIEW last_race_results AS
+SELECT
+    r.race_name,
+    r.date,
+    d.first_name,
+    d.last_name,
+    rr.finish_position,
+    rr.points
+FROM race_results rr
+JOIN drivers d ON rr.driver_id = d.driver_id
+JOIN races r ON rr.race_id = r.race_id
+WHERE r.race_id = (
+    SELECT race_id FROM races
+    WHERE season_year = EXTRACT(YEAR FROM CURRENT_DATE)
+    ORDER BY round DESC LIMIT 1
+)
+ORDER BY rr.finish_position;
+```
+
+### Querying Views in Flask
+```python
+cursor.execute("SELECT * FROM current_standings;")
+cursor.execute("SELECT * FROM last_race_results;")
+```
+
+---
+
 ## Data Quality — Duplicate Prevention
 
 ### The Problem
@@ -706,23 +1098,12 @@ UNIQUE (race_id, driver_id);
 
 **Step 4 — Update schema.sql to reflect constraints**
 
-### Unique Constraints Added
-| Table | Unique Constraint |
-|---|---|
-| races | season_year, round |
-| race_results | race_id, driver_id |
-| qualifying_results | race_id, driver_id |
-| sprint_results | race_id, driver_id |
-| driver_standings | season_year, round, driver_id |
-| constructor_standings | season_year, round, constructor_id |
-
 ### Key Lessons
 - Always use meaningful business columns as conflict columns in upsert
 - Never use SERIAL auto-increment IDs as upsert conflict targets
 - Clean child tables before parent tables (foreign key dependency order)
 - Use BEGIN/COMMIT transactions when making bulk changes
 - Always verify fixes with a duplicate check query after cleanup
-- session_replication_role = replica requires superuser — run as postgres
 
 ### Duplicate Check Query
 Run anytime to verify data quality:
@@ -820,6 +1201,8 @@ ufw status verbose
 ```
 Internet
     ↓
+Cloudflare Network
+    ↓ Cloudflare Tunnel
 Home Router (192.168.4.1)
     ↓
 IBM-BASEMENT RHEL Host (192.168.4.5)
@@ -827,19 +1210,22 @@ IBM-BASEMENT RHEL Host (192.168.4.5)
     │
     ├── KVM Hypervisor
     │     ├── virbr0 virtual bridge (192.168.122.x)
-    │     │     └── debian-db (192.168.122.236)
-    │     │           └── PostgreSQL :5432
+    │     │     ├── debian-db (192.168.122.236)
+    │     │     │     └── PostgreSQL :5432
+    │     │     └── debian-app (192.168.122.100)
+    │     │           └── gunicorn + Flask :5000
     │     │
     │     └── macvtap on eno2
-    │           └── webster/ubuntu (192.168.4.7)
-    │                 └── Apache, Python pipeline
+    │           └── webster (192.168.4.7)
+    │                 ├── Apache :80 (reverse proxy)
+    │                 ├── cloudflared (Cloudflare Tunnel)
+    │                 ├── SSH tunnel -> debian-db :5432
+    │                 └── SSH tunnel -> debian-app :5000
     │
-    └── SSH Tunnel: ubuntu -> RHEL -> debian-db
-          bridges the two networks for DB connectivity
+    └── Tunnels bridge the macvtap/virbr0 network gap
 
-Windows Machine (192.168.4.x)
-    ├── pgAdmin -> SSH tunnel -> PostgreSQL
-    └── VSCode -> git push -> GitHub -> future webhook -> ubuntu
+Request flow for f1.charleslucas562.com:
+Browser -> Cloudflare -> cloudflared -> Apache -> SSH tunnel -> Flask -> PostgreSQL
 ```
 
 ---
@@ -913,14 +1299,16 @@ crontab -l    # view current jobs
 crontab -e    # edit jobs
 ```
 
-### Current Schedule (Ubuntu Web Server)
+### Current Schedule (Ubuntu Web Server / webster)
 | Schedule | Command | Purpose |
 |---|---|---|
 | Every Monday 6am | python3 pipeline/incremental_load.py | Load latest race data |
-| On reboot | autossh tunnel | Restart SSH tunnel to Debian VM |
+| On reboot | autossh tunnel :5432 | Restart SSH tunnel to debian-db |
+| On reboot | autossh tunnel :5000 | Restart SSH tunnel to debian-app |
 
 ```bash
 @reboot sleep 30 && autossh -M 0 -f -N -L 5432:192.168.122.236:5432 root@192.168.4.5
+@reboot sleep 30 && autossh -M 0 -f -N -L 5000:192.168.122.100:5000 root@192.168.4.5
 0 6 * * 1 cd /home/clucas/formula1-db && python3 pipeline/incremental_load.py
 ```
 
@@ -933,19 +1321,27 @@ crontab -e    # edit jobs
 
 ### Initial Setup (done once)
 ```
-1. Debian VM created on RHEL host
-2. PostgreSQL installed and configured on Debian
-3. Ubuntu web server set up with Python and git
-4. SSH tunnel configured Ubuntu -> RHEL -> Debian
-5. GitHub repo cloned to Ubuntu
+1. Debian DB VM created on RHEL host
+2. PostgreSQL installed and configured on debian-db
+3. Ubuntu web server (webster) set up with Python, Apache, Cloudflare Tunnel
+4. SSH tunnel configured webster -> IBM-BASEMENT -> debian-db
+5. GitHub repo cloned to webster
 6. setup_db.py run -> creates all 12 tables
-7. fetch_data.py run -> loads 1950-2025 historical data
+7. fetch_data.py run -> loads 1950-2026 historical data
+8. Debian App VM (debian-app) created on RHEL host
+9. Flask + gunicorn installed on debian-app
+10. systemd service configured to run Flask on boot
+11. SSH tunnel configured webster -> IBM-BASEMENT -> debian-app
+12. Apache reverse proxy configured on webster
+13. Cloudflare Tunnel config updated for f1.charleslucas562.com
+14. Database views created in PostgreSQL
+15. f1.charleslucas562.com live
 ```
 
 ### Weekly Automated Flow (every Monday 6am)
 ```
-1. Cron triggers incremental_load.py on Ubuntu
-2. autossh keeps the SSH tunnel alive
+1. Cron triggers incremental_load.py on webster
+2. autossh keeps the SSH tunnels alive
 3. Python connects to PostgreSQL via tunnel (looks like localhost:5432)
 4. Script asks Jolpica API: what was the last race?
 5. API returns latest race details
@@ -956,14 +1352,29 @@ crontab -e    # edit jobs
 10. Log written to logs/incremental/
 ```
 
+### Web Request Flow (f1.charleslucas562.com)
+```
+1. Browser requests f1.charleslucas562.com
+2. Cloudflare receives request and routes through tunnel
+3. cloudflared on webster passes to Apache on localhost:80
+4. Apache virtual host matches f1.charleslucas562.com
+5. Apache proxies request through SSH tunnel to localhost:5000
+6. SSH tunnel forwards to gunicorn on debian-app:5000
+7. gunicorn passes to Flask worker process
+8. Flask queries PostgreSQL views on debian-db directly (same network)
+9. PostgreSQL returns standings and race results
+10. Flask renders index.html template with data
+11. Response travels back through the chain to the browser
+```
+
 ### Manual Development Flow
 ```
 1. Write code in VSCode on Windows
 2. git push to GitHub
-3. SSH into Ubuntu web server
-4. git pull to get latest code
-5. Test and run scripts
-6. Push any fixes back to GitHub
+3. SSH into debian-app
+4. git pull (future: webhook auto-deploys)
+5. sudo systemctl restart f1-app
+6. Test at f1.charleslucas562.com
 ```
 
 ---
@@ -977,16 +1388,31 @@ crontab -e    # edit jobs
 - **ufw** — Linux firewall whitelist based everything blocked by default
 - **cron** — Linux task scheduler for automated jobs
 - **systemctl** — manages Linux services (start, stop, status, enable)
+- **systemd service files** — define how a service runs, who runs it, when it starts
 - **Static IP** — prevents VM IP from changing on reboot
 - **SSH keys** — passwordless authentication using public/private key pairs
 - **autossh** — keeps SSH tunnels alive automatically
 - **Hidden files** — files starting with . are hidden use `ls -la` to see them
+- **chmod 600** — file readable/writable by owner only, used for credential files
+- **Service accounts** — dedicated non-login users for running services securely
 
 ### Networking
 - **SSH tunnel** — routes traffic through an intermediate server
 - **Port forwarding** — `-L local_port:remote_host:remote_port`
 - **NAT** — how virbr0 VMs reach the internet through the host
 - **Firewall whitelist** — block everything allow only what you need
+- **Reverse proxy** — Apache sitting in front of Flask forwarding requests
+- **Cloudflare Tunnel** — exposes local services to internet without open ports
+
+### Web / Flask
+- **Flask** — Python micro web framework, routes HTTP requests to functions
+- **gunicorn** — production WSGI server, runs multiple Flask worker processes
+- **WSGI** — standard interface between Python web apps and web servers
+- **Virtual environment** — isolated Python package environment per project
+- **Jinja2 templating** — Flask's HTML template engine with {{ }} syntax
+- **Routes** — @app.route decorators map URLs to Python functions
+- **render_template** — passes data from Python to HTML templates
+- **Reverse proxy** — Apache forwards requests to Flask, Flask never exposed directly
 
 ### PostgreSQL / Databases
 - **Relational schema** — tables linked by foreign keys
@@ -999,6 +1425,8 @@ crontab -e    # edit jobs
 - **Transactions** — BEGIN/COMMIT/ROLLBACK for safe bulk operations
 - **Foreign key dependency order** — clean/delete children before parents
 - **ON CONFLICT DO UPDATE** — upsert syntax in PostgreSQL
+- **Views** — saved queries in the database, simplify application code
+- **EXTRACT(YEAR FROM CURRENT_DATE)** — dynamic current year in SQL
 
 ### Python Data Engineering
 - **psycopg2** — Python PostgreSQL connector
@@ -1011,13 +1439,6 @@ crontab -e    # edit jobs
 - **Pagination** — fetching all results when API limits per-page records
 - **Logging** — structured logs for monitoring pipeline runs
 - **Error handling** — try/except/finally for robust pipelines
-- **.get() vs []** — use .get() for optional fields to avoid crashes on missing data
-
-### Data Quality
-- **Duplicate detection** — GROUP BY ... HAVING COUNT(*) > 1
-- **Self join delete** — removing dupes while keeping one copy
-- **Idempotent upsert** — conflict on business key not surrogate key
-- **Data quality checks** — verify after every major operation
 
 ### Git / DevOps
 - **Personal access token** — GitHub authentication not password
@@ -1029,9 +1450,11 @@ crontab -e    # edit jobs
 
 ## Troubleshooting
 
-### SSH into Debian VM from RHEL Host
+### SSH into VMs from RHEL Host
 ```bash
-ssh root@192.168.122.236
+ssh root@192.168.122.236    # debian-db
+ssh root@192.168.122.100    # debian-app
+ssh clucas@192.168.4.7      # webster
 ```
 
 ### SSH locked out of VM
@@ -1044,71 +1467,78 @@ ufw allow 22/tcp
 ufw reload
 ```
 
-### PostgreSQL not accepting connections
+### Flask service not starting
 ```bash
-# Check cluster is actually running
-pg_lsclusters
-systemctl status postgresql@17-main
+# Check service status
+systemctl status f1-app
 
-# Check what it is listening on
-ss -tlnp | grep 5432
+# Check detailed logs
+journalctl -u f1-app -n 50 --no-pager
 
-# Check recent errors
-tail -50 /var/log/postgresql/postgresql-17-main.log
+# Common causes:
+# - .env file not found or wrong permissions
+# - venv path wrong in service file
+# - Port 5000 already in use
+# - f1app user does not own /var/www/f1-app
+```
 
-# Check pg_hba.conf
-cat /etc/postgresql/17/main/pg_hba.conf | tail -10
+### f1.charleslucas562.com not loading
+Work through the chain:
+```bash
+# 1. Is Flask running on debian-app?
+systemctl status f1-app
+
+# 2. Is the SSH tunnel from webster to debian-app alive?
+ps aux | grep autossh
+ss -tlnp | grep 5000
+
+# 3. Can webster reach Flask through the tunnel?
+curl http://localhost:5000
+
+# 4. Is Apache proxying correctly?
+curl -H "Host: f1.charleslucas562.com" http://localhost
+
+# 5. Is cloudflared running?
+systemctl status cloudflared
+
+# 6. Check Apache error logs
+tail -50 /var/log/apache2/f1-app-error.log
+```
+
+### cloudflared fails to start (YAML error)
+```bash
+# Check for duplicate keys in config
+cat /etc/cloudflared/config.yml
+
+# If duplicated, rewrite the file cleanly
+nano /etc/cloudflared/config.yml
 
 # Restart
-systemctl restart postgresql@17-main
+systemctl restart cloudflared
+systemctl status cloudflared
+```
+
+### PostgreSQL not accepting connections
+```bash
+pg_lsclusters
+systemctl status postgresql@17-main
+ss -tlnp | grep 5432
+tail -50 /var/log/postgresql/postgresql-17-main.log
 ```
 
 ### SSH tunnel drops or port already in use
 ```bash
-# Find and kill stale tunnel processes
 pkill -f "ssh -L 5432"
-
-# Check nothing is holding port 5432
+pkill -f "ssh -L 5000"
 ss -tlnp | grep 5432
-sudo lsof -i :5432
-
-# Kill specific PID if needed
-kill -9 <pid>
-
-# Start fresh tunnel
-ssh -L 5432:192.168.122.236:5432 root@192.168.4.5 -N -f
-```
-
-### Python script connection timeout
-```bash
-# Check tunnel is running
-ps aux | grep ssh
-
-# Test connection directly
-psql -h 127.0.0.1 -p 5432 -U f1user -d f1_data
-
-# Check .env has correct values
-cat ~/formula1-db/.env
-
-# Always run from project root
-cd ~/formula1-db
-python3 pipeline/script.py
+ss -tlnp | grep 5000
 ```
 
 ### VM has duplicate IPs
-Happened after multiple rebuilds — DHCP assigned two leases.
 ```bash
 ip a show ens3
-ip addr del 192.168.122.235/24 dev ens3
+ip addr del <unwanted-ip>/24 dev ens3
 # Set static IP in /etc/network/interfaces to prevent recurrence
-```
-
-### Permission denied for session_replication_role
-Requires superuser. Run as postgres user not f1user:
-```bash
-ssh root@192.168.122.236
-su - postgres
-psql -d f1_data
 ```
 
 ### Git authentication failing (403)
@@ -1122,23 +1552,22 @@ git push -u origin main
 ## Next Steps
 
 ### Immediate
-- [ ] Build web dashboard (index.html + Flask backend)
-- [ ] Set up GitHub webhook for auto-deploy to Ubuntu
+- [ ] GitHub webhook for auto-deploy to debian-app
+- [ ] Improve dashboard styling
+- [ ] Add constructor standings page
 - [ ] Add pit stop data (endpoint needs investigation)
 
 ### AI Layer
 - [ ] Build query_engine.py using Claude API
-- [ ] Text-to-SQL — ask questions in plain English
+- [ ] Text-to-SQL — ask questions in plain English against the F1 database
 - [ ] Migrate to Azure OpenAI once AZ-900 certified
 
 ### Data Enhancements
 - [ ] Add lap times via OpenF1 API (live during race weekends)
 - [ ] Historical data validation queries
-- [ ] Add 2026 season data as it comes in
 
 ### Infrastructure
 - [ ] Make GitHub repo public as portfolio piece
-- [ ] Set up Royal TS for organized server connection management
 - [ ] Consider upgrading RHEL 7 host to Rocky Linux 8/9
 - [ ] Document webhook setup when implemented
 
@@ -1151,7 +1580,9 @@ When ready to move this to Azure here is how each component maps:
 | Home Lab Component | Azure Service |
 |---|---|
 | Debian VM + PostgreSQL | Azure Database for PostgreSQL Flexible Server |
-| Ubuntu Web Server | Azure App Service |
+| debian-app + Flask + gunicorn | Azure App Service (Python) |
+| Apache reverse proxy | Azure Application Gateway / Front Door |
+| Cloudflare Tunnel | Azure Public IP + DNS Zone |
 | Python pipeline scripts | Azure Data Factory Pipelines |
 | Cron schedule | ADF Scheduled Trigger |
 | SSH tunnel | Azure Private Link / VNet Peering |
@@ -1160,7 +1591,10 @@ When ready to move this to Azure here is how each component maps:
 | Logs folder | Azure Monitor / Log Analytics |
 | Claude API query engine | Azure OpenAI Service |
 | pgAdmin | Azure Data Studio |
+| systemd service | Azure App Service always-on setting |
+| Database views | Azure SQL Views / Synapse Views |
+| f1app service account | Azure Managed Identity |
 
 This project is a proof of concept for a real Azure data platform.
 Everything built here maps 1:1 to enterprise Azure architecture making it
-a strong portfolio piece for DP-100 AI-102 and data engineering roles.
+a strong portfolio piece for DP-100, AI-102, and data engineering roles.
