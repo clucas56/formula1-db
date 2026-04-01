@@ -4,46 +4,70 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #111;
-            color: #fff;
-            margin: 0;
-            padding: 20px;
-        }
-        h1 {
-            color: #e10600;
-            text-align: center;
-        }
-        h2 {
-            color: #e10600;
-            border-bottom: 2px solid #e10600;
-            padding-bottom: 5px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 40px;
-        }
-        th {
-            background-color: #e10600;
-            color: #fff;
-            padding: 10px;
-            text-align: left;
-        }
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #333;
-        }
-        tr:hover {
-            background-color: #222;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
-    </style>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    body {
+        font-family: 'Courier New', Courier, monospace;
+        background-color: #111111;
+        color: #ffffff;
+    }
+    .container {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    h2 {
+        color: #e10600;
+        font-size: 14px;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+        margin: 40px 0 10px 0;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #e10600;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 40px;
+        font-size: 13px;
+    }
+    th {
+        background-color: #1a1a1a;
+        color: #e10600;
+        padding: 10px 12px;
+        text-align: left;
+        letter-spacing: 2px;
+        font-size: 11px;
+        text-transform: uppercase;
+        border-bottom: 1px solid #333333;
+    }
+    td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #1e1e1e;
+        color: #cccccc;
+    }
+    tr:hover td {
+        background-color: #1a1a1a;
+        color: #ffffff;
+    }
+    tr:first-child td {
+        color: #e10600;
+        font-weight: bold;
+    }
+    .footer {
+        text-align: center;
+        padding: 30px 0;
+        color: #444444;
+        font-size: 11px;
+        letter-spacing: 2px;
+        border-top: 1px solid #1e1e1e;
+        margin-top: 20px;
+    }
+</style>
 </head>
 <body>
     <div class="container">
@@ -133,7 +157,7 @@
         	{% endfor %}
     	  </tbody>
 	</table>
-
+    <div class="footer">F1 DATA PLATFORM &nbsp;|&nbsp; charleslucas562.com &nbsp;|&nbsp; 2026</div>
     </div>
 </body>
 </html>
