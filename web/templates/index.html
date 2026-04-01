@@ -157,6 +157,30 @@
         	{% endfor %}
     	  </tbody>
 	</table>
+
+    <!-- Race Selector -->
+    <h2>2026 Race Results</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Round</th>
+                <th>Race</th>
+                <th>Date</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in season_races %}
+            <tr>
+                <td>{{ row[1] }}</td>
+                <td>{{ row[2] }}</td>
+                <td>{{ row[3] }}</td>
+                <td><a href="/race/{{ row[0] }}/{{ row[1] }}" style="color:#e10600; text-decoration:none; letter-spacing:1px; font-size:11px;">VIEW →</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
     <div class="footer">F1 DATA PLATFORM &nbsp;|&nbsp; charleslucas562.com &nbsp;|&nbsp; 2026</div>
     </div>
 </body>
