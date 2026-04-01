@@ -93,6 +93,31 @@
             </tbody>
         </table>
 
+	<!-- Constructor Standings -->
+	<h2>2026 Constructor Standings</h2>
+	<table>
+    	  <thead>
+        	<tr>
+            	<th>Position</th>
+            	<th>Constructor</th>
+            	<th>Nationality</th>
+        	    <th>Points</th>
+        	    <th>Wins</th>
+        	</tr>
+    	  </thead>
+    	  <tbody>
+        	{% for row in constructor_standings %}
+        	<tr>
+        	    <td>{{ row[0] }}</td>
+        	    <td>{{ row[1] }}</td>
+        	    <td>{{ row[2] }}</td>
+        	    <td>{{ row[3] }}</td>
+        	    <td>{{ row[4] }}</td>
+        	</tr>
+        	{% endfor %}
+    	  </tbody>
+	</table>
+
     </div>
 </body>
 </html>
