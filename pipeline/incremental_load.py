@@ -350,11 +350,16 @@ def main():
         conn = get_connection()
         logger.info("Database connected")
 
-        # Step 1 - Find latest race from API
-        season, round_num = get_latest_race()
-        if not season:
-            logger.error("Could not determine latest race - exiting")
-            sys.exit(1)
+        # Step 1 - Find race to load (override with args if provided)
+        if len(sys.argv) == 3:
+            season = int(sys.argv[1])
+            round_num = int(sys.argv[2])
+            logger.info(f"Manual override: Season {season} Round {round_num}")
+        else:
+            season, round_num = get_latest_race()
+            if not season:
+                logger.error("Could not determine latest race - exiting")
+                sys.exit(1)
 
         # Step 2 - Check if already loaded
         race_id = already_loaded(conn, season, round_num)
