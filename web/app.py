@@ -46,13 +46,49 @@ def index():
     cursor.execute("SELECT * FROM current_constructor_standings;")
     constructor_standings = cursor.fetchall()
 
+    cursor.execute("SELECT * FROM season_races ORDER BY round;")
+    season_races = cursor.fetchall()
+
     cursor.close()
     conn.close()
 
-    return render_template('index.html', 
-                           standings=standings, 
+    return render_template('index.html',
+                           standings=standings,
                            last_race=last_race,
-                           constructor_standings=constructor_standings)
+                           constructor_standings=constructor_standings,
+                           season_races=season_races)
+    
+@app.route('/race/<int:season>/<int:round_num>')
+def race(season, round_num):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Get race details and results
+    cursor.execute("""
+        SELECT * FROM race_results_detail
+        WHERE season_year = %s AND round = %s
+        ORDER BY finish_position;
+    """, (season, round_num))
+    results = cursor.fetchall()
+
+    # Get all races in the season for the navigation selector
+    cursor.execute("""
+        SELECT * FROM season_races
+        ORDER BY round;
+    """)
+    season_races = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    if not results:
+        return "Race not found", 404
+
+    return render_template('race.html', 
+                           results=results, 
+                           season_races=season_races,
+                           season=season,
+                           round_num=round_num)    
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
