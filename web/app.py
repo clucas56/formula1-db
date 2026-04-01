@@ -3,6 +3,7 @@ import hmac
 import hashlib
 import subprocess
 import psycopg2
+import markdown
 from flask import Flask, render_template, request, abort
 from dotenv import load_dotenv
 from pathlib import Path
@@ -89,6 +90,14 @@ def race(season, round_num):
                            season_races=season_races,
                            season=season,
                            round_num=round_num)    
+    
+@app.route('/docs')
+def docs():
+    doc_path = Path(__file__).parent.parent / 'DOCUMENTATION.md'
+    with open(doc_path, 'r') as f:
+        content = f.read()
+    html_content = markdown.markdown(content, extensions=['tables', 'fenced_code'])
+    return render_template('docs.html', content=html_content)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
