@@ -43,10 +43,16 @@ def index():
     cursor.execute("SELECT * FROM last_race_results;")
     last_race = cursor.fetchall()
 
+    cursor.execute("SELECT * FROM current_constructor_standings;")
+    constructor_standings = cursor.fetchall()
+
     cursor.close()
     conn.close()
 
-    return render_template('index.html', standings=standings, last_race=last_race)
+    return render_template('index.html', 
+                           standings=standings, 
+                           last_race=last_race,
+                           constructor_standings=constructor_standings)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
