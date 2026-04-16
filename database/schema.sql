@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS race_results (
     points DECIMAL(4,1),
     laps_completed INT,
     status VARCHAR(50),
-    fastest_lap BOOLEAN DEFAULT FALSE.
+    fastest_lap BOOLEAN DEFAULT FALSE,
     UNIQUE (race_id, driver_id)
 );
 
