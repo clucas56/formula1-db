@@ -132,7 +132,7 @@ def drivers():
     conn.close()
     return render_template('drivers.html', drivers=drivers_list)
 
-@app.route('/drivers/<int:driver_id>')
+@app.route('/drivers/<driver_id>')
 def driver_detail(driver_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -149,12 +149,8 @@ def driver_detail(driver_id):
         return "Driver not found", 404
 
     cursor.execute("""
-        SELECT
-            COUNT(*) as races,
-            SUM(CASE WHEN finish_position = 1 THEN 1 ELSE 0 END) as wins,
-            COALESCE(SUM(points), 0) as total_points
-        FROM race_results
-        WHERE driver_id = %s;
+        SELECT races, wins, total_points
+        FROM driver_career_stats WHERE driver_id = %s;
     """, (driver_id,))
     stats = cursor.fetchone()
 
