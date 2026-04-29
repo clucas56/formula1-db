@@ -14,9 +14,10 @@
         .nav-link { flex: 1; text-align: center; color: #e10600; text-decoration: none; font-size: 11px; letter-spacing: 3px; padding: 7px 0; border-top: 2px solid #e10600; border-bottom: 2px solid #e10600; }
         .nav-link:hover { color: #ffffff; }
         h2 { color: #e10600; font-size: 14px; letter-spacing: 4px; text-transform: uppercase; margin: 40px 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #e10600; }
-        .filter-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
-        .filter-btn { color: #666666; text-decoration: none; font-size: 11px; letter-spacing: 1px; padding: 4px 8px; border: 1px solid #333333; }
-        .filter-btn:hover { color: #e10600; border-color: #e10600; }
+        .search-bar { margin-bottom: 20px; }
+        .search-bar input { width: 100%; background: #1a1a1a; border: 1px solid #333333; color: #cccccc; font-family: 'Courier New', Courier, monospace; font-size: 13px; letter-spacing: 1px; padding: 8px 12px; outline: none; }
+        .search-bar input:focus { border-color: #e10600; color: #ffffff; }
+        .search-bar input::placeholder { color: #444444; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 14px; }
         th { background-color: #1a1a1a; color: #e10600; padding: 10px 12px; text-align: left; letter-spacing: 2px; font-size: 13px; text-transform: uppercase; border-bottom: 1px solid #333333; }
         td { padding: 8px 12px; border-bottom: 1px solid #1e1e1e; color: #cccccc; }
@@ -35,6 +36,9 @@
         </nav>
 
         <h2>All Drivers &nbsp;<span style="color:#444444; font-size:11px; letter-spacing:2px;">{{ drivers | length }} total</span></h2>
+        <div class="search-bar">
+            <input type="text" id="driverSearch" placeholder="SEARCH BY NAME OR NATIONALITY..." oninput="filterTable()">
+        </div>
         <table>
             <thead>
                 <tr>
@@ -56,5 +60,14 @@
 
         <div class="footer">F1 DATA PLATFORM &nbsp;|&nbsp; charleslucas562.com &nbsp;|&nbsp; 2026</div>
     </div>
+    <script>
+        function filterTable() {
+            const q = document.getElementById('driverSearch').value.toLowerCase();
+            document.querySelectorAll('tbody tr').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(q) ? '' : 'none';
+            });
+        }
+    </script>
 </body>
 </html>
