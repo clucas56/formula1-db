@@ -19,6 +19,10 @@
         td { padding: 8px 12px; border-bottom: 1px solid #1e1e1e; color: #cccccc; }
         tr:hover td { background-color: #1a1a1a; color: #ffffff; }
         .coords { color: #444444; font-size: 11px; }
+        .search-bar { margin-bottom: 20px; }
+        .search-bar input { width: 100%; background: #1a1a1a; border: 1px solid #333333; color: #cccccc; font-family: 'Courier New', Courier, monospace; font-size: 13px; letter-spacing: 1px; padding: 8px 12px; outline: none; }
+        .search-bar input:focus { border-color: #e10600; color: #ffffff; }
+        .search-bar input::placeholder { color: #444444; }
         .footer { text-align: center; padding: 30px 0; color: #444444; font-size: 11px; letter-spacing: 2px; border-top: 1px solid #1e1e1e; margin-top: 20px; }
     </style>
 </head>
@@ -33,6 +37,9 @@
         </nav>
 
         <h2>All Circuits &nbsp;<span style="color:#444444; font-size:11px; letter-spacing:2px;">{{ circuits | length }} total</span></h2>
+        <div class="search-bar">
+            <input type="text" id="circuitSearch" placeholder="SEARCH BY CIRCUIT OR COUNTRY..." oninput="filterTable()">
+        </div>
         <table>
             <thead>
                 <tr>
@@ -54,5 +61,14 @@
 
         <div class="footer">F1 DATA PLATFORM &nbsp;|&nbsp; charleslucas562.com &nbsp;|&nbsp; 2026</div>
     </div>
+    <script>
+        function filterTable() {
+            const q = document.getElementById('circuitSearch').value.toLowerCase();
+            document.querySelectorAll('tbody tr').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(q) ? '' : 'none';
+            });
+        }
+    </script>
 </body>
 </html>
