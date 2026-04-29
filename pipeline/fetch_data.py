@@ -498,16 +498,16 @@ def main():
         logger.info("Database connected")
 
         # Load in order - dependencies first!
-        #load_circuits(conn)
-        #load_drivers(conn)
-        #load_constructors(conn)
-        #load_seasons(conn)
-        #load_race_results(conn)
-        #load_qualifying(conn)
-        #load_sprint(conn)
-        #load_driver_standings(conn)
-        #load_constructor_standings(conn)
-        #load_pit_stops(conn)
+        load_circuits(conn)
+        load_drivers(conn)
+        load_constructors(conn)
+        load_seasons(conn)
+        load_race_results(conn)
+        load_qualifying(conn)
+        load_sprint(conn)
+        load_driver_standings(conn)
+        load_constructor_standings(conn)
+        load_pit_stops(conn)
 
         logger.info("Full historical load complete!")
 
