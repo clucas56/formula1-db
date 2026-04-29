@@ -150,31 +150,6 @@
         <p class="no-data">— DATA LOAD IN PROGRESS —</p>
         {% endif %}
 
-        <!-- Last Race Results -->
-        {% if last_race %}
-        <h2>Last Race: {{ last_race[0][0] }} — {{ last_race[0][1] }}</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Position</th>
-                    <th>Driver</th>
-                    <th>Points</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in last_race %}
-                <tr>
-                    <td>{{ row[4] }}</td>
-                    <td>{{ row[2] }} {{ row[3] }}</td>
-                    <td>{{ row[5] }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <h2>Last Race</h2>
-        <p class="no-data">— DATA LOAD IN PROGRESS —</p>
-        {% endif %}
 
         <!-- Constructor Standings -->
         <h2>2026 Constructor Standings</h2>
