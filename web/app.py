@@ -132,7 +132,7 @@ def drivers():
     conn.close()
     return render_template('drivers.html', drivers=drivers_list)
 
-@app.route('/drivers/<int:driver_id>')
+@app.route('/drivers/<driver_id>')
 def driver_detail(driver_id):
     conn = get_connection()
     cursor = conn.cursor()
