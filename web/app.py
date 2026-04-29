@@ -91,6 +91,100 @@ def race(season, round_num):
                            season=season,
                            round_num=round_num)    
     
+@app.route('/seasons')
+def seasons():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT season_year, total_rounds FROM seasons ORDER BY season_year DESC;")
+    seasons_list = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('seasons.html', seasons=seasons_list)
+
+@app.route('/seasons/<int:year>')
+def season_detail(year):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT round, race_name, date
+        FROM races
+        WHERE season_year = %s
+        ORDER BY round;
+    """, (year,))
+    races = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    if not races:
+        return "Season not found", 404
+    return render_template('season_detail.html', races=races, year=year)
+
+@app.route('/drivers')
+def drivers():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT driver_id, first_name, last_name, nationality
+        FROM drivers
+        ORDER BY last_name, first_name;
+    """)
+    drivers_list = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('drivers.html', drivers=drivers_list)
+
+@app.route('/drivers/<int:driver_id>')
+def driver_detail(driver_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT driver_id, first_name, last_name, nationality
+        FROM drivers WHERE driver_id = %s;
+    """, (driver_id,))
+    driver = cursor.fetchone()
+
+    if not driver:
+        cursor.close()
+        conn.close()
+        return "Driver not found", 404
+
+    cursor.execute("""
+        SELECT
+            COUNT(*) as races,
+            SUM(CASE WHEN finish_position = 1 THEN 1 ELSE 0 END) as wins,
+            COALESCE(SUM(points), 0) as total_points
+        FROM race_results
+        WHERE driver_id = %s;
+    """, (driver_id,))
+    stats = cursor.fetchone()
+
+    cursor.execute("""
+        SELECT DISTINCT r.season_year
+        FROM race_results rr
+        JOIN races r ON rr.race_id = r.race_id
+        WHERE rr.driver_id = %s
+        ORDER BY r.season_year DESC;
+    """, (driver_id,))
+    active_seasons = [row[0] for row in cursor.fetchall()]
+
+    cursor.close()
+    conn.close()
+    return render_template('driver_detail.html', driver=driver, stats=stats, active_seasons=active_seasons)
+
+@app.route('/circuits')
+def circuits():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT circuit_id, name, country, lat, lng
+        FROM circuits
+        ORDER BY country, name;
+    """)
+    circuits_list = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('circuits.html', circuits=circuits_list)
+
 @app.route('/docs')
 def docs():
     doc_path = Path(__file__).parent.parent / 'DOCUMENTATION.md'
