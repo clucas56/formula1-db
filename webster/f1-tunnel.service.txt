@@ -1,0 +1,67 @@
+# =============================================================================
+# Webster — autossh tunnel to the Docker host
+#
+# This goes on the WEBSTER VM. It maintains a persistent SSH tunnel so
+# webster's Apache can reach the FastAPI container on the Docker host.
+#
+# This is a MUCH simpler version of the v1 setup: ONE tunnel to ONE stable
+# target (the Docker host), instead of two tunnels to two flaky VMs.
+#
+# ALTERNATIVE: if you set up a static route on the RHEL host so webster can
+# reach the virbr0 network directly, you don't need this tunnel at all —
+# just point the Apache vhost at the Docker host's IP directly. The tunnel
+# is the "works without touching host networking" option.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Option A — quick test (run manually to verify before making it permanent)
+# ---------------------------------------------------------------------------
+# Replace <docker-host-ip> with the Docker host's IP on virbr0.
+# Replace <user> with an SSH user on the Docker host.
+#
+#   autossh -M 0 -f -N \
+#     -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" \
+#     -L 8000:localhost:8000 \
+#     <user>@<docker-host-ip>
+#
+# Then on webster: curl http://127.0.0.1:8000/health
+# Should return {"status":"ok"} once the Docker stack is up.
+
+# ---------------------------------------------------------------------------
+# Option B — permanent (systemd service)
+# Install to: /etc/systemd/system/f1-tunnel.service
+# Then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now f1-tunnel
+# ---------------------------------------------------------------------------
+
+# ---- BEGIN /etc/systemd/system/f1-tunnel.service ----
+[Unit]
+Description=autossh tunnel: webster -> F1 Docker host (port 8000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=autossh
+Environment=AUTOSSH_GATETIME=0
+# Replace <docker-host-ip> and <user> below.
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" \
+  -o "ExitOnForwardFailure yes" \
+  -o "StrictHostKeyChecking accept-new" \
+  -L 8000:localhost:8000 \
+  <user>@<docker-host-ip>
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+# ---- END /etc/systemd/system/f1-tunnel.service ----
+
+# Notes:
+# - Create a dedicated `autossh` user on webster, or reuse an existing one.
+# - That user needs an SSH key authorized on the Docker host (key-only auth).
+# - `-M 0` disables autossh's own monitoring port; the ServerAlive options
+#   handle dead-connection detection instead (the modern recommended setup).
+# - `ExitOnForwardFailure yes` means the tunnel fails fast if port 8000 is
+#   already taken, instead of silently running without the forward.

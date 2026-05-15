@@ -1,0 +1,124 @@
+# =============================================================================
+# F1 Data Platform — Containerized Stack
+#
+# Replaces the v1 LAPP stack's debian-db + debian-app VMs with one Docker host.
+# webster is KEPT — it stays the edge VM (Apache + Cloudflare tunnel + the
+# portfolio site at charleslucas562.com) and reverse-proxies
+# f1.charleslucas562.com to this host's exposed port 8000.
+#
+# Because webster handles public ingress and proxying, this stack has NO
+# cloudflared service and NO nginx service. Just the three things that are
+# actually F1-specific: the database, the API, and the ingestion job.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 17 — same version as the old debian-db VM.
+  # Data persists in the named volume; the container can be destroyed and
+  # recreated without losing data.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17
+    container_name: f1-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Files in /docker-entrypoint-initdb.d/ run automatically the first time
+      # the container starts (only while the data directory is empty).
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - f1net
+    # No `ports:` — Postgres is not exposed to the host or the LAN.
+    # Only the api and ingestion containers reach it, as `postgres:5432`.
+
+  # ---------------------------------------------------------------------------
+  # FastAPI — replaces Flask + gunicorn on the old debian-app VM.
+  #
+  # Port 8000 IS exposed to the Docker host so webster's Apache can reach it
+  # over the network (via the webster->docker-host path — autossh tunnel or
+  # static route; see HANDOFF.md Phase 5).
+  # ---------------------------------------------------------------------------
+  api:
+    build: ./api
+    container_name: f1-api
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # Read-only role for the /query endpoint (created in HANDOFF Phase 6).
+      # Until that role exists, point these at the same DB_USER creds.
+      DB_RO_USER: ${DB_RO_USER}
+      DB_RO_PASSWORD: ${DB_RO_PASSWORD}
+    ports:
+      # host:container — webster reaches this as http://<docker-host>:8000
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - f1net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Ingestion — replaces the cron-driven incremental_load.py on the old
+  # debian-db VM. Runs forever, sleeps until the next scheduled time
+  # (INGESTION_CRON, default Monday 6am), then runs incremental_load.main().
+  #
+  # The one-time historical bootstrap (fetch_data.py) is NOT run by this
+  # service — it's a manual `docker compose run` step. See HANDOFF Phase 3.
+  # ---------------------------------------------------------------------------
+  ingestion:
+    build: ./ingestion
+    container_name: f1-ingestion
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      INGESTION_CRON: ${INGESTION_CRON:-0 6 * * 1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ingestion_logs:/app/logs
+    networks:
+      - f1net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  f1net:
+    driver: bridge
+
+# -----------------------------------------------------------------------------
+# Named volumes — survive `docker compose down`. Only `down -v` deletes them.
+# -----------------------------------------------------------------------------
+volumes:
+  postgres_data:
+  ingestion_logs:
