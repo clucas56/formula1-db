@@ -1,3 +1,8 @@
+-- =============================================================================
+-- F1 Data Platform — Schema
+-- Auto-loaded by the postgres container on first start.
+-- =============================================================================
+
 -- Seasons
 CREATE TABLE IF NOT EXISTS seasons (
     season_year INT PRIMARY KEY,
@@ -45,6 +50,8 @@ CREATE TABLE IF NOT EXISTS races (
 );
 
 -- Race Results
+-- NOTE: Original schema.sql had `DEFAULT FALSE.` (period instead of comma) on
+-- the fastest_lap line — fixed here.
 CREATE TABLE IF NOT EXISTS race_results (
     result_id SERIAL PRIMARY KEY,
     race_id INT REFERENCES races(race_id),
@@ -131,3 +138,13 @@ CREATE TABLE IF NOT EXISTS pit_stops (
     lap INT,
     duration VARCHAR(20)
 );
+
+-- =============================================================================
+-- Views — used by the API layer
+-- (You'll need to recreate `current_standings` and `last_race_results` from
+-- the existing DB; pg_dump --schema-only will give you the definitions.)
+-- =============================================================================
+
+-- Placeholder: replace with the actual view definitions from your current DB.
+-- Run on the old DB to extract them:
+--   pg_dump -U f1user -d f1_data --schema-only --table='*standings*' > views.sql
