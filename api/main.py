@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from db import pool, ro_pool
-from routes import standings, races, query
+from routes import standings, races, query, pages
 
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ def health():
 
 
 # Register route modules
+app.include_router(pages.router)
 app.include_router(standings.router)
 app.include_router(races.router)
 app.include_router(query.router)
