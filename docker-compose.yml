@@ -58,11 +58,6 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      # Read-only role for the /query endpoint (created in HANDOFF Phase 6).
-      # Until that role exists, point these at the same DB_USER creds.
-      DB_RO_USER: ${DB_RO_USER}
-      DB_RO_PASSWORD: ${DB_RO_PASSWORD}
     ports:
       # host:container — webster reaches this as http://<docker-host>:8000
       - "8000:8000"
