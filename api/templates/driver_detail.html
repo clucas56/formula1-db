@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ driver['first_name'] }} {{ driver['last_name'] }} | F1 Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', Courier, monospace; background-color: #111111; color: #ffffff; }
+        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        .back-link { color: #e10600; text-decoration: none; font-size: 12px; letter-spacing: 2px; }
+        .back-link:hover { color: #ffffff; }
+        nav { display: flex; justify-content: space-between; margin: 15px 0 30px 0; gap: 15px; }
+        .nav-link { flex: 1; text-align: center; color: #e10600; text-decoration: none; font-size: 11px; letter-spacing: 3px; padding: 7px 0; border-top: 2px solid #e10600; border-bottom: 2px solid #e10600; }
+        .nav-link:hover { color: #ffffff; }
+        .driver-header { margin: 30px 0 30px 0; border-bottom: 1px solid #e10600; padding-bottom: 16px; }
+        .driver-header h1 { color: #e10600; font-size: 24px; letter-spacing: 3px; text-transform: uppercase; }
+        .driver-header p { color: #666666; font-size: 12px; letter-spacing: 2px; margin-top: 6px; }
+        .stats-grid { display: flex; gap: 30px; margin: 30px 0 40px 0; }
+        .stat-box { flex: 1; background: #1a1a1a; padding: 20px; border-top: 2px solid #e10600; }
+        .stat-box .label { color: #666666; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px; }
+        .stat-box .value { color: #ffffff; font-size: 28px; font-weight: bold; }
+        .stat-box .value.highlight { color: #e10600; }
+        h2 { color: #e10600; font-size: 14px; letter-spacing: 4px; text-transform: uppercase; margin: 30px 0 12px 0; padding-bottom: 6px; border-bottom: 1px solid #e10600; }
+        .seasons-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 40px; }
+        .season-tag { color: #cccccc; font-size: 12px; letter-spacing: 1px; padding: 4px 10px; border: 1px solid #333333; text-decoration: none; }
+        .season-tag:hover { color: #e10600; border-color: #e10600; }
+        .footer { text-align: center; padding: 30px 0; color: #444444; font-size: 11px; letter-spacing: 2px; border-top: 1px solid #1e1e1e; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/drivers" class="back-link">← BACK TO DRIVERS</a>
+
+        <nav>
+            <a href="/seasons" class="nav-link">SEASONS</a>
+            <a href="/drivers" class="nav-link">DRIVERS</a>
+            <a href="/circuits" class="nav-link">CIRCUITS</a>
+        </nav>
+
+        <div class="driver-header">
+            <h1>{{ driver['first_name'] }} {{ driver['last_name'] }}</h1>
+            <p>{{ driver['nationality'] }}</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="label">Races</div>
+                <div class="value">{{ stats['races'] }}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Wins</div>
+                <div class="value {% if stats['wins'] and stats['wins'] > 0 %}highlight{% endif %}">{{ stats['wins'] or 0 }}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Points</div>
+                <div class="value">{{ stats['total_points'] | int }}</div>
+            </div>
+        </div>
+
+        {% if active_seasons %}
+        <h2>Active Seasons</h2>
+        <div class="seasons-list">
+            {% for year in active_seasons %}
+            <a href="/seasons/{{ year }}" class="season-tag">{{ year }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="footer">F1 DATA PLATFORM &nbsp;|&nbsp; charleslucas562.com &nbsp;|&nbsp; 2026</div>
+    </div>
+</body>
+</html>
